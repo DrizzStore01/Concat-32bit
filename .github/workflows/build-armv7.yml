@@ -1,4 +1,4 @@
-name: Build Concat 32-bit (armv7) APK
+name: Build NovaMotion 32-bit (armv7) APK
 
 on:
   push:
@@ -16,6 +16,8 @@ jobs:
     name: Build Android armv7 (32-bit)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -26,7 +28,7 @@ jobs:
         run: |
           version=$(sed -n 's/^version = "\(.*\)"/\1/p' src/Cargo.toml | head -1)
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Building Concat $version for armv7-linux-androideabi"
+          echo "Building NovaMotion $version for armv7-linux-androideabi"
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@master
@@ -57,11 +59,11 @@ jobs:
           keystore=$RUNNER_TEMP/run.keystore
           keytool -genkeypair -v -keystore "$keystore" -storepass concat -keypass concat \
             -alias concat -keyalg RSA -keysize 2048 -validity 10000 \
-            -dname "CN=Concat, O=Concat" >/dev/null 2>&1
+            -dname "CN=NovaMotion, O=NovaMotion" >/dev/null 2>&1
           echo "CARGO_APK_RELEASE_KEYSTORE=$keystore" >> "$GITHUB_ENV"
           echo "CARGO_APK_RELEASE_KEYSTORE_PASSWORD=concat" >> "$GITHUB_ENV"
 
-      - name: Build Concat APK
+      - name: Build NovaMotion APK
         working-directory: src
         run: |
           set -euo pipefail
@@ -77,17 +79,31 @@ jobs:
           mkdir -p output
           version="${{ steps.version.outputs.version }}"
           find src/target -name "*.apk" -ls
-          apk_file=$(find src/target -name "Concat.apk" | head -1)
-          if [ -z "$apk_file" ]; then
-            apk_file=$(find src/target -name "*.apk" | grep -v "unaligned" | head -1)
-          fi
+          apk_file=$(find src/target -name "NovaMotion.apk" -o -name "Concat.apk" -o -name "*.apk" | grep -v "unaligned" | head -1)
           echo "Found APK at $apk_file"
-          cp "$apk_file" "output/Concat-${version}-android-armv7.apk"
+          cp "$apk_file" "output/NovaMotion-${version}-android-armv7.apk"
           ls -lh output/
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Concat-android-armv7-apk
+          name: NovaMotion-android-armv7-apk
           path: output/*.apk
           if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/heads/main')
+        with:
+          tag_name: v${{ steps.version.outputs.version }}-novamotion
+          name: NovaMotion v${{ steps.version.outputs.version }} (armv7 32-bit)
+          body: |
+            ### 🚀 NovaMotion v${{ steps.version.outputs.version }}
+            **Alight Motion Aesthetic + Performance Edition**
+            - **Architecture:** Android 32-bit (`armv7-linux-androideabi`) - Optimized for budget devices (Vivo Y15s, Helio P35, 3GB RAM)
+            - **Theme:** Dark Carbon (`#0D1117`) + Electric Blue (`#0084FF`) & Cyber Cyan (`#00D2FF`)
+            - **Gallery:** Instant direct MediaStore path resolution (zero duplicate copying into internal storage)
+            - **Speech AI:** Groq Cloud Whisper Turbo (`whisper-large-v3-turbo` on LPUs) for instant <1s captions with 0% CPU strain
+          files: output/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

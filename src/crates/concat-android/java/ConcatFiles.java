@@ -225,6 +225,17 @@ public class ConcatFiles extends Fragment {
                         .commitAllowingStateLoss();
                 activity.getFragmentManager().executePendingTransactions();
 
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                    activity.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    try {
+                        activity.requestPermissions(new String[]{
+                            Manifest.permission.READ_EXTERNAL_STORAGE,
+                            Manifest.permission.WRITE_EXTERNAL_STORAGE
+                        }, 0xC0C6);
+                    } catch (Exception ignored) {
+                    }
+                }
+
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("*/*");
@@ -282,14 +293,86 @@ public class ConcatFiles extends Fragment {
                 File dir = new File(activity.getExternalFilesDir(null), "Imported");
                 dir.mkdirs();
                 for (Uri uri : uris) {
-                    File out = unique(dir, displayName(activity, uri));
-                    if (copy(activity, uri, out)) {
-                        paths.add(out.getAbsolutePath());
+                    String direct = resolvePath(activity, uri);
+                    if (direct != null && new File(direct).canRead()) {
+                        Log.i(TAG, "using direct media path (instant, no copy): " + direct);
+                        paths.add(direct);
+                    } else {
+                        File out = unique(dir, displayName(activity, uri));
+                        if (copy(activity, uri, out)) {
+                            paths.add(out.getAbsolutePath());
+                        }
                     }
                 }
                 filesPicked(paths.toArray(new String[0]));
             }
         }, TAG).start();
+    }
+
+    /** Resolves direct file path on storage to avoid slow file copying. */
+    private static String resolvePath(Activity activity, Uri uri) {
+        if (uri == null) return null;
+        if ("file".equalsIgnoreCase(uri.getScheme())) {
+            String path = uri.getPath();
+            if (path != null && new File(path).canRead()) return path;
+        }
+        if ("content".equalsIgnoreCase(uri.getScheme())) {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && android.provider.DocumentsContract.isDocumentUri(activity, uri)) {
+                    String auth = uri.getAuthority();
+                    if ("com.android.externalstorage.documents".equals(auth)) {
+                        String docId = android.provider.DocumentsContract.getDocumentId(uri);
+                        String[] split = docId.split(":");
+                        if ("primary".equalsIgnoreCase(split[0])) {
+                            String path = Environment.getExternalStorageDirectory() + "/" + (split.length > 1 ? split[1] : "");
+                            if (new File(path).canRead()) return path;
+                        }
+                    } else if ("com.android.providers.media.documents".equals(auth)) {
+                        String docId = android.provider.DocumentsContract.getDocumentId(uri);
+                        String[] split = docId.split(":");
+                        String type = split[0];
+                        Uri contentUri = null;
+                        if ("image".equals(type)) {
+                            contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                        } else if ("video".equals(type)) {
+                            contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                        } else if ("audio".equals(type)) {
+                            contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+                        }
+                        if (contentUri != null && split.length > 1) {
+                            String sel = "_id=?";
+                            String[] selArgs = new String[]{ split[1] };
+                            String path = queryDataColumn(activity, contentUri, sel, selArgs);
+                            if (path != null && new File(path).canRead()) return path;
+                        }
+                    }
+                }
+                String path = queryDataColumn(activity, uri, null, null);
+                if (path != null && new File(path).canRead()) return path;
+            } catch (Exception e) {
+                Log.w(TAG, "could not resolve direct path for " + uri, e);
+            }
+        }
+        return null;
+    }
+
+    private static String queryDataColumn(Activity activity, Uri uri, String selection, String[] selectionArgs) {
+        Cursor cursor = null;
+        final String column = "_data";
+        final String[] projection = { column };
+        try {
+            cursor = activity.getContentResolver().query(uri, projection, selection, selectionArgs, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                final int colIndex = cursor.getColumnIndex(column);
+                if (colIndex >= 0) {
+                    return cursor.getString(colIndex);
+                }
+            }
+        } catch (Exception ignored) {
+        } finally {
+            if (cursor != null) cursor.close();
+        }
+        return null;
     }
 
     /** The name the picker showed for the file, or one made from the URI. */
