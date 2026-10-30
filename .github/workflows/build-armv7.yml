@@ -1,0 +1,85 @@
+name: Build Concat 32-bit (armv7) APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  GGML_NATIVE: "OFF"
+
+jobs:
+  build-armv7:
+    name: Build Android armv7 (32-bit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' src/Cargo.toml | head -1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building Concat $version for armv7-linux-androideabi"
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.93.1
+          targets: armv7-linux-androideabi
+
+      - name: Install cargo-apk
+        uses: taiki-e/cache-cargo-install-action@v3
+        with:
+          tool: cargo-apk
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libclang-dev pkg-config
+
+      - name: Build FFmpeg 32-bit for Android
+        run: src/scripts/ffmpeg-mobile.sh armv7-linux-androideabi
+
+      - name: Fetch sherpa-onnx 32-bit for Android
+        run: src/scripts/sherpa-mobile.sh armv7-linux-androideabi
+
+      - name: Generate release keystore
+        run: |
+          keystore=$RUNNER_TEMP/run.keystore
+          keytool -genkeypair -v -keystore "$keystore" -storepass concat -keypass concat \
+            -alias concat -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Concat, O=Concat" >/dev/null 2>&1
+          echo "CARGO_APK_RELEASE_KEYSTORE=$keystore" >> "$GITHUB_ENV"
+          echo "CARGO_APK_RELEASE_KEYSTORE_PASSWORD=concat" >> "$GITHUB_ENV"
+
+      - name: Build Concat APK
+        working-directory: src
+        run: |
+          set -euo pipefail
+          eval "$(scripts/mobile-env.sh armv7-linux-androideabi)"
+          cargo apk build --release -p concat-android --target armv7-linux-androideabi
+
+      - name: Stage APK
+        run: |
+          mkdir -p output
+          version="${{ steps.version.outputs.version }}"
+          find src/target -name "*.apk" -ls
+          apk_file=$(find src/target -name "Concat.apk" | head -1)
+          if [ -z "$apk_file" ]; then
+            apk_file=$(find src/target -name "*.apk" | grep -v "unaligned" | head -1)
+          fi
+          echo "Found APK at $apk_file"
+          cp "$apk_file" "output/Concat-${version}-android-armv7.apk"
+          ls -lh output/
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Concat-android-armv7-apk
+          path: output/*.apk
+          if-no-files-found: error
