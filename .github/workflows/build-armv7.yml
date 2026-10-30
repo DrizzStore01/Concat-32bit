@@ -40,7 +40,11 @@ jobs:
           tool: cargo-apk
 
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build libclang-dev pkg-config
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build libclang-dev clang pkg-config
+          libclang_dir=$(find /usr/lib/llvm* /usr/lib/x86_64-linux-gnu -name "libclang.so*" 2>/dev/null | head -1 | xargs dirname)
+          echo "Discovered LIBCLANG_PATH=$libclang_dir"
+          echo "LIBCLANG_PATH=$libclang_dir" >> "$GITHUB_ENV"
 
       - name: Build FFmpeg 32-bit for Android
         run: src/scripts/ffmpeg-mobile.sh armv7-linux-androideabi
@@ -62,6 +66,10 @@ jobs:
         run: |
           set -euo pipefail
           eval "$(scripts/mobile-env.sh armv7-linux-androideabi)"
+          if [ -z "${LIBCLANG_PATH:-}" ]; then
+            export LIBCLANG_PATH=$(find /usr/lib/llvm* /usr/lib/x86_64-linux-gnu -name "libclang.so*" 2>/dev/null | head -1 | xargs dirname)
+          fi
+          echo "Using LIBCLANG_PATH: $LIBCLANG_PATH"
           cargo apk build --release -p concat-android --target armv7-linux-androideabi
 
       - name: Stage APK

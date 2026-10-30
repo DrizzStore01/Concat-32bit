@@ -56,7 +56,9 @@ case "$target" in
     elif [ "$target" = x86_64-linux-android ]; then
       clang_target="x86_64-linux-android26"
     fi
-    echo "export LIBCLANG_PATH='$ndk/toolchains/llvm/prebuilt/$host_tag/lib'"
+    if [ -f "$ndk/toolchains/llvm/prebuilt/$host_tag/lib/libclang.so" ]; then
+      echo "export LIBCLANG_PATH='$ndk/toolchains/llvm/prebuilt/$host_tag/lib'"
+    fi
     echo "export BINDGEN_EXTRA_CLANG_ARGS_${target//-/_}='--target=$clang_target --sysroot=$sysroot -resource-dir=$ndk/toolchains/llvm/prebuilt/$host_tag/lib/clang/$clang_ver'"
     echo "export BINDGEN_EXTRA_CLANG_ARGS='--target=$clang_target --sysroot=$sysroot -resource-dir=$ndk/toolchains/llvm/prebuilt/$host_tag/lib/clang/$clang_ver'"
     # Slint's backend compiles a Java helper against the SDK platform's
