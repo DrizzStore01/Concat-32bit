@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Read version
         id: version
@@ -85,14 +85,14 @@ jobs:
           ls -lh output/
 
       - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: NovaMotion-android-armv7-apk
           path: output/*.apk
           if-no-files-found: error
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/heads/main')
         with:
           tag_name: v${{ steps.version.outputs.version }}-novamotion
